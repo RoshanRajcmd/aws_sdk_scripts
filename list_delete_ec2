@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+import boto3
+import argparse
+
+
+def fetch_instances(user_tag):
+    instance_details = []
+    for reservation in response['Reservations']:
+        for instance in reservation['Instances']:
+
+            # Extract Name tag if available
+            instance_name = 'N/A'
+            if 'Tags' in instance:
+                for tag in instance['Tags']:
+                    #Assuming the Name tag is mandatory and only once
+                    if tag['Key'] == 'Name':
+                        instance_name = tag['Value']
+                    #Assuming the filter value of the tag key will be 'Test'
+                    if tag['Key'] == 'Test' and tag['Value'] == user_tag:
+                        instance_details.append({
+                            'Instance ID': instance['InstanceId'],
+                            'Name': instance_name,
+                            'Type': instance['InstanceType'],
+                            'Tag' : tag['Value'],
+                            'State': instance['State']['Name'],
+                            'Private IP': instance.get('PrivateIpAddress', 'N/A'),
+                            'Public IP': instance.get('PublicIpAddress', 'N/A')
+                        })
+
+    return instance_details
+
+def print_instances(instance_details):
+    if instance_details:
+        print("---Listing instances---")
+
+        for instance in instance_details:
+
+            print(f"Instance ID: {instance['Instance ID']}, \
+                Name: {instance['Name']}, \
+                Type: {instance['Type']}, \
+                State: {instance['State']}, \
+                Private IP: {instance['Private IP']}, \
+                Public IP: {instance['Public IP']}")
+            
+        print("---End of List---")
+
+    else:
+        print("\t***No results from the given TAG***")
+        
+# get session configuration
+session = boto3.Session()
+
+# CLA parsing
+parser =  argparse.ArgumentParser(description="Script to list or delete EC2 instances under current AWS CLI configuration.")
+parser.add_argument("-a", "--action", type=str, help="Provide action - list or delete", default="list")
+parser.add_argument("-r", "--region", type=str, help="Provide valid region", default=session.region_name)
+parser.add_argument("-t", "--tag", type=str, help="Provide tag to filter", default=None, required=True)
+args = parser.parse_args()
+
+print("---AWS SDK execution---")
+
+print("Session region: " + args.region)
+# s3 = boto3.resource('s3')
+# for bucket in s3.buckets.all():
+#     print(bucket.name)
+
+ec2 = boto3.client('ec2', region_name=args.region)
+response = ec2.describe_instances()
+# print(response)
+
+#Cant validate the user given tag as the tags in instances can be of any name, unless a standard naming convention is maintained in the tags
+if args.tag == 'None':
+    print("Invalid tag filter - Terminating session")
+
+else:
+    if args.action == "list":
+        instance_details = fetch_instances(args.tag)
+        print_instances(instance_details)
+        print("---Terminatinig session---")
+
+    elif args.action == "delete":
+        instance_details = fetch_instances(args.tag)
+        print_instances(instance_details)
+        if instance_details:
+            ack = input("Please confirm your choice to DELETE y/n: ")
+            if ack == 'y' or ack == 'Y':
+                print("***Deleting the following instance***")
+                instance_ids = [instance['Instance ID'] for instance in instance_details]
+                del_response = ec2.terminate_instances(InstanceIds=instance_ids)
+                print(del_response)
+        print("---Terminatinig session---")
+
+    else:
+        print("Invalid action value - Terminating session")
